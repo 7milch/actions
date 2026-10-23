@@ -15,7 +15,7 @@ Authentication goes through `aws-actions/configure-aws-credentials`: pass `role-
 | `role-to-assume` | no | | IAM role ARN for OIDC. Needs `permissions: id-token: write` |
 | `aws-access-key-id` | no | | Static credentials (when no role) |
 | `aws-secret-access-key` | no | | Static credentials (when no role) |
-| `crane-version` | no | `latest` | crane version |
+| `crane-version` | no | latest | crane version, e.g. `v0.20.3` |
 
 ## Outputs
 

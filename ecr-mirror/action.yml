@@ -35,9 +35,9 @@ inputs:
     required: false
     default: ""
   crane-version:
-    description: "crane version to install"
+    description: "crane version to install (e.g. v0.20.3). Empty means latest."
     required: false
-    default: "latest"
+    default: ""
 
 outputs:
   destination-image:
