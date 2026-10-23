@@ -5,7 +5,6 @@ Reusable GitHub Actions.
 | Action | Description |
 | --- | --- |
 | [`ecr-mirror`](./ecr-mirror) | Copy a container image into Amazon ECR with crane (OIDC or access key) |
-| [`slack-notify`](./slack-notify) | Post a success / skipped / failure message to Slack via Incoming Webhook |
 
 ## Usage
 
