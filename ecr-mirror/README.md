@@ -15,6 +15,7 @@ Authentication goes through `aws-actions/configure-aws-credentials`: pass `role-
 | `role-to-assume` | no | | IAM role ARN for OIDC. Needs `permissions: id-token: write` |
 | `aws-access-key-id` | no | | Static credentials (when no role) |
 | `aws-secret-access-key` | no | | Static credentials (when no role) |
+| `skip-if-unchanged` | no | `true` | Skip the copy when the destination tag already has the same digest as the source |
 | `crane-version` | no | latest | crane version, e.g. `v0.20.3` |
 
 ## Outputs
@@ -22,6 +23,8 @@ Authentication goes through `aws-actions/configure-aws-credentials`: pass `role-
 | Name | Description |
 | --- | --- |
 | `destination-image` | Full image reference pushed to ECR |
+| `digest` | Digest of the source image |
+| `skipped` | `true` if the copy was skipped because the digests matched |
 
 ## Required IAM permissions
 

@@ -34,6 +34,10 @@ inputs:
     description: "Static secret access key (used when role-to-assume is empty)"
     required: false
     default: ""
+  skip-if-unchanged:
+    description: "Skip the copy when the destination already has the same digest as the source."
+    required: false
+    default: "true"
   crane-version:
     description: "crane version to install (e.g. v0.20.3). Empty means latest."
     required: false
@@ -43,6 +47,12 @@ outputs:
   destination-image:
     description: "Full ECR image reference that was pushed"
     value: ${{ steps.resolve.outputs.destination-image }}
+  digest:
+    description: "Digest of the source image (sha256:...)"
+    value: ${{ steps.check.outputs.source-digest }}
+  skipped:
+    description: "true when the copy was skipped because the digests matched"
+    value: ${{ steps.check.outputs.skipped }}
 
 runs:
   using: composite
@@ -122,7 +132,31 @@ runs:
         aws ecr get-login-password --region "$AWS_REGION" \
           | crane auth login "$REGISTRY" --username AWS --password-stdin
 
+    - name: Compare digests
+      id: check
+      shell: bash
+      env:
+        SOURCE_IMAGE: ${{ inputs.source-image }}
+        DEST_IMAGE: ${{ steps.resolve.outputs.destination-image }}
+        SKIP_IF_UNCHANGED: ${{ inputs.skip-if-unchanged }}
+      run: |
+        set -euo pipefail
+        src="$(crane digest "$SOURCE_IMAGE")"
+        echo "source-digest=${src}" >> "$GITHUB_OUTPUT"
+        # 宛先が未作成 / 未 push の場合は digest 取得に失敗するので「変更あり」として扱う
+        dst="$(crane digest "$DEST_IMAGE" 2>/dev/null || true)"
+        echo "destination-digest=${dst}" >> "$GITHUB_OUTPUT"
+        echo "source:      ${src}"
+        echo "destination: ${dst:-<none>}"
+        if [ "$SKIP_IF_UNCHANGED" = "true" ] && [ -n "$dst" ] && [ "$src" = "$dst" ]; then
+          echo "Digests match; skipping copy."
+          echo "skipped=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "skipped=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Copy image
+      if: steps.check.outputs.skipped != 'true'
       shell: bash
       env:
         SOURCE_IMAGE: ${{ inputs.source-image }}
