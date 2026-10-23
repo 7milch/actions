@@ -63,9 +63,28 @@ runs:
         aws-region: ${{ inputs.aws-region }}
 
     - name: Install crane
-      uses: imjasonh/setup-crane@v0.4
-      with:
-        version: ${{ inputs.crane-version }}
+      shell: bash
+      env:
+        CRANE_VERSION: ${{ inputs.crane-version }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        if [ -z "$CRANE_VERSION" ]; then
+          CRANE_VERSION="$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/google/go-containerregistry/releases/latest \
+            | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
+        fi
+        case "$(uname -m)" in
+          x86_64)          arch=x86_64 ;;
+          aarch64|arm64)   arch=arm64 ;;
+          *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;;
+        esac
+        url="https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${arch}.tar.gz"
+        echo "Installing crane ${CRANE_VERSION} from ${url}"
+        tmp="$(mktemp -d)"
+        curl -fsSL "$url" | tar -xz -C "$tmp" crane
+        install -m 0755 "$tmp/crane" /usr/local/bin/crane
+        crane version
 
     - name: Resolve destination
       id: resolve
