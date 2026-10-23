@@ -1,0 +1,114 @@
+name: "ECR Mirror (crane)"
+description: "Copy a container image from any registry into Amazon ECR using crane. Supports OIDC (role-to-assume) or static access keys."
+branding:
+  icon: copy
+  color: orange
+
+inputs:
+  source-image:
+    description: "Source image reference (e.g. docker.io/library/nginx:1.27)"
+    required: true
+  destination-repository:
+    description: "ECR repository name (e.g. nginx)"
+    required: true
+  destination-tag:
+    description: "Tag to use in ECR. Defaults to the source image tag."
+    required: false
+    default: ""
+  aws-region:
+    description: "AWS region of the ECR registry"
+    required: true
+  aws-account-id:
+    description: "AWS account ID. Resolved via sts:GetCallerIdentity when empty."
+    required: false
+    default: ""
+  role-to-assume:
+    description: "IAM role ARN to assume via OIDC. Requires `permissions: id-token: write`."
+    required: false
+    default: ""
+  aws-access-key-id:
+    description: "Static access key ID (used when role-to-assume is empty)"
+    required: false
+    default: ""
+  aws-secret-access-key:
+    description: "Static secret access key (used when role-to-assume is empty)"
+    required: false
+    default: ""
+  crane-version:
+    description: "crane version to install"
+    required: false
+    default: "latest"
+
+outputs:
+  destination-image:
+    description: "Full ECR image reference that was pushed"
+    value: ${{ steps.resolve.outputs.destination-image }}
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials (OIDC)
+      if: inputs.role-to-assume != ''
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-to-assume }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Configure AWS credentials (access key)
+      if: inputs.role-to-assume == ''
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Install crane
+      uses: imjasonh/setup-crane@v0.4
+      with:
+        version: ${{ inputs.crane-version }}
+
+    - name: Resolve destination
+      id: resolve
+      shell: bash
+      env:
+        SOURCE_IMAGE: ${{ inputs.source-image }}
+        DEST_REPO: ${{ inputs.destination-repository }}
+        DEST_TAG: ${{ inputs.destination-tag }}
+        ACCOUNT_ID: ${{ inputs.aws-account-id }}
+        AWS_REGION: ${{ inputs.aws-region }}
+      run: |
+        set -euo pipefail
+        if [ -z "$ACCOUNT_ID" ]; then
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+        fi
+        if [ -z "$DEST_TAG" ]; then
+          # source の最後の ':' 以降をタグとみなす（digest 指定やタグ無しは latest）
+          name="${SOURCE_IMAGE%%@*}"
+          case "${name##*/}" in
+            *:*) DEST_TAG="${name##*:}" ;;
+            *)   DEST_TAG="latest" ;;
+          esac
+        fi
+        REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
+        echo "destination-image=${REGISTRY}/${DEST_REPO}:${DEST_TAG}" >> "$GITHUB_OUTPUT"
+
+    - name: Login to ECR
+      shell: bash
+      env:
+        AWS_REGION: ${{ inputs.aws-region }}
+        REGISTRY: ${{ steps.resolve.outputs.registry }}
+      run: |
+        set -euo pipefail
+        aws ecr get-login-password --region "$AWS_REGION" \
+          | crane auth login "$REGISTRY" --username AWS --password-stdin
+
+    - name: Copy image
+      shell: bash
+      env:
+        SOURCE_IMAGE: ${{ inputs.source-image }}
+        DEST_IMAGE: ${{ steps.resolve.outputs.destination-image }}
+      run: |
+        set -euo pipefail
+        echo "crane copy $SOURCE_IMAGE -> $DEST_IMAGE"
+        crane copy "$SOURCE_IMAGE" "$DEST_IMAGE"
